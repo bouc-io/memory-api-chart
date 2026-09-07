@@ -1,0 +1,100 @@
+# Base values for memory-api-chart
+# These values should never change between environments or over time
+
+replicaCount: 1
+
+image:
+  registry: ghcr.io/bouc-io
+  repository: application/memory/memory-api-server
+  tag: "1.0.2254680589"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+service:
+  type: ClusterIP
+  port: 80
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# Applied to the Deployment object (not the pod template). Reloader watches the
+# Secrets and ConfigMaps this workload references and triggers a rolling restart
+# when one changes, which is what makes DB password rotation take effect: a
+# secretKeyRef env var is resolved at pod start and never refreshed.
+# Inert if stakater/Reloader is not installed in the cluster.
+deploymentAnnotations:
+  reloader.stakater.com/auto: "true"
+
+podAnnotations:
+  # Scraped by Prometheus for app-level metrics at /metrics. Port matches the container.
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/metrics"
+  prometheus.io/port: "3000"
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+resources: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+volumes: []
+volumeMounts: []
+
+# volumes:
+#   - name: model-cache
+#     emptyDir: {}
+
+# volumeMounts:
+#   - name: model-cache
+#     mountPath: /app/.cache/huggingface
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Default environment variables (can be overridden per environment)
+environment:
+  PORT: 3000
+  # OpenTelemetry — OTEL_EXPORTER_OTLP_ENDPOINT is built from the node IP in the
+  # deployment template. service.name surfaces in Jaeger/Grafana.
+  OTEL_SERVICE_NAME: "memory-api-server"
+  # Overridden from the cluster-vars ConfigMap via the HelmRelease (Flux postBuild).
+  ENVIRONMENT_ID: "unknown"
+  # Embedding Model Configuration
+  EMBEDDING_MODEL: "nomic-embed-text"
+  # Summarization model for memory compression (POST /v1/memories/compress)
+  SUMMARIZATION_MODEL: "qwen3.5:2b"
+  # Optional: Hugging Face cache directory (uncomment to override default ~/.cache/huggingface/)
+  # HF_CACHE_DIR: "/app/.cache/huggingface"
+  # Optional: Use quantized models for faster inference (uncomment to enable)
+  # EMBEDDING_QUANTIZED: "true"
+  # Admin API URL for dynamic embedding assignment resolution (leave empty to use env-var Ollama)
+  ADMIN_API_URL: ""
+
+# Ensure bundled PostgreSQL subchart pulls from the Bitnami legacy registry or appropriate source
+postgresql:
+  global:
+    ## Security parameters
+    ##
+    security:
+      allowInsecureImages: true
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: 17.5.0-debian-12-r18
+  primary:
+    extraVolumes:
+      - name: postgresql-socket
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: postgresql-socket
+        mountPath: /var/run/postgresql
